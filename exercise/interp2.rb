@@ -5,29 +5,29 @@ def evaluate(tree, env)
   when "lit"
     tree[1]
   when "+"
-    evaluate(tree[1]) + evaluate(tree[2])
+    evaluate(tree[1], env) + evaluate(tree[2], env)
   when "-"
-    evaluate(tree[1]) - evaluate(tree[2])
+    evaluate(tree[1], env) - evaluate(tree[2], env)
   when "*"
-    evaluate(tree[1]) * evaluate(tree[2])
+    evaluate(tree[1], env) * evaluate(tree[2], env)
   when "/"
-    evaluate(tree[1]) / evaluate(tree[2])
+    evaluate(tree[1], env) / evaluate(tree[2], env)
   when "%"
-    evaluate(tree[1]) % evaluate(tree[2])
+    evaluate(tree[1], env) % evaluate(tree[2], env)
   when "**"
-    evaluate(tree[1]) ** evaluate(tree[2])
+    evaluate(tree[1], env) ** evaluate(tree[2], env)
   when "<"
-    evaluate(tree[1]) < evaluate(tree[2])
+    evaluate(tree[1], env) < evaluate(tree[2], env)
   when "<="
-    evaluate(tree[1]) <= evaluate(tree[2])
+    evaluate(tree[1], env) <= evaluate(tree[2], env)
   when "=="
-    evaluate(tree[1]) == evaluate(tree[2])
+    evaluate(tree[1], env) == evaluate(tree[2], env)
   when ">="
-    evaluate(tree[1]) >= evaluate(tree[2])
+    evaluate(tree[1], env) >= evaluate(tree[2], env)
   when ">"
-    evaluate(tree[1]) > evaluate(tree[2])
+    evaluate(tree[1], env) > evaluate(tree[2], env)
   when "func_call" # 仮の実装
-    p(evaluate(tree[2]))
+    p(evaluate(tree[2], env))
   when "stmts"
     i = 1
     last = nil
@@ -45,4 +45,4 @@ end
 
 str = minruby_load()
 tree = minruby_parse(str)
-answer = evaluate(tree)
+answer = evaluate(tree,{})
