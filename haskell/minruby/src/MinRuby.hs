@@ -5,9 +5,9 @@ module MinRuby
 
 import Control.Applicative (empty)
 import Data.Either (either)
-import Data.Tree
-import Text.Megaparsec
-import Text.Megaparsec.Char
+import Data.Tree (Tree(..))
+import Text.Megaparsec (Parsec, Dec, parse, parseErrorPretty, some, string, space, (<|>))
+import Text.Megaparsec.Char (digitChar)
 
 type MinRubyParser = Parsec Dec String
 
