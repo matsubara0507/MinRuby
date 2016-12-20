@@ -2,7 +2,7 @@ module Main
     ( main
     ) where
 
-import MinRuby (minrubyParse)
+import MinRuby (Value(..), minrubyParse, FromValue(..), toValue)
 import Data.Tree (Tree(..))
 
 main :: IO ()
@@ -12,18 +12,20 @@ main = do
   -- print tree
   print $ evaluate tree
 
-evaluate :: Tree String -> Int
+evaluate :: Tree Value -> Value
 evaluate (Node v ls) =
-  if null ls then
-    read v
-  else
-    let exps = fmap evaluate ls in
+  let exps = fmap evaluate ls in
+  if null ls then v else
     case v of
-      "lit" -> exps !! 0
-      "+" -> exps !! 0 + exps !! 1
-      "-" -> exps !! 0 - exps !! 1
-      "*" -> exps !! 0 * exps !! 1
-      "/" -> exps !! 0 `div` exps !! 1
-      "%" -> exps !! 0 `mod` exps !! 1
-      "**" -> exps !! 0 ^ exps !! 1
-      _ -> error ("undefined binaty op: " `mappend` v)
+      (SVal "lit") -> exps !! 0
+      (SVal "+")  -> toValue ((fromValues exps 0) + (fromValues exps 1) :: Int)
+      (SVal "-")  -> toValue ((fromValues exps 0) - (fromValues exps 1) :: Int)
+      (SVal "*")  -> toValue ((fromValues exps 0) * (fromValues exps 1) :: Int)
+      (SVal "/")  -> toValue ((fromValues exps 0) `div` (fromValues exps 1) :: Int)
+      (SVal "%")  -> toValue ((fromValues exps 0) `mod` (fromValues exps 1) :: Int)
+      (SVal "**") -> toValue $ (fromValues exps 0 :: Int) ^ (fromValues exps 1 :: Int)
+      _ -> error ("undefined : " `mappend` show v)
+
+fromValues :: FromValue a => [Value] -> Int -> a
+fromValues vls idx = let v = vls !! idx in
+  maybe (error $ "unmatch type : " `mappend` show v) id (fromValue v)

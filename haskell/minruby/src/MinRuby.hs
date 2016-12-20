@@ -1,5 +1,10 @@
+{-# LANGUAGE FlexibleInstances #-}
+
 module MinRuby
-    ( minrubyParse
+    ( Value(..)
+    , ToValue(..)
+    , FromValue(..)
+    , minrubyParse
     , minrubyLoad
     ) where
 
@@ -12,14 +17,49 @@ import Text.Megaparsec.Char (digitChar)
 
 type MinRubyParser = Parsec Dec String
 
-minrubyParse :: String -> Tree String
+data Value = SVal String | IVal Int | BVal Bool deriving (Eq)
+
+instance Show Value where
+  show (SVal v) = show v
+  show (IVal v) = show v
+  show (BVal True) = "true"
+  show (BVal False) = "false"
+
+class ToValue a where
+  toValue :: a -> Value
+
+instance ToValue String where
+  toValue = SVal
+
+instance ToValue Int where
+  toValue = IVal
+
+instance ToValue Bool where
+  toValue = BVal
+
+class FromValue a where
+  fromValue :: Value -> Maybe a
+
+instance FromValue String where
+  fromValue (SVal v) = Just v
+  fromValue _        = Nothing
+
+instance FromValue Int where
+  fromValue (IVal v) = Just v
+  fromValue _        = Nothing
+
+instance FromValue Bool where
+  fromValue (BVal v) = Just v
+  fromValue _        = Nothing
+
+minrubyParse :: String -> Tree Value
 minrubyParse = either (error . parseErrorPretty) id
              . parse minrubyParser "MinRuby Parser"
 
 minrubyLoad :: IO String
 minrubyLoad = undefined
 
-minrubyParser :: MinRubyParser (Tree String)
+minrubyParser :: MinRubyParser (Tree Value)
 minrubyParser = parseExp
 
 {-
@@ -34,10 +74,10 @@ minrubyParser = parseExp
   factor := "(" exp ")" | number
 -}
 
-parseExp :: MinRubyParser (Tree String)
+parseExp :: MinRubyParser (Tree Value)
 parseExp = parseOp12
 
-parseOp12 :: MinRubyParser (Tree String)
+parseOp12 :: MinRubyParser (Tree Value)
 parseOp12 = parseOp13 >>= parseOp12'
   where
     parseOp12' left = mkBinOpNode left
@@ -45,7 +85,7 @@ parseOp12 = parseOp13 >>= parseOp12'
                         <*> parseOp12
                   <|> return left
 
-parseOp13 :: MinRubyParser (Tree String)
+parseOp13 :: MinRubyParser (Tree Value)
 parseOp13 = parseOp14 >>= parseOp13'
   where
     parseOp13' left = mkBinOpNode left
@@ -53,13 +93,13 @@ parseOp13 = parseOp14 >>= parseOp13'
                         <*> parseOp13
                   <|> return left
 
-parseOp14 :: MinRubyParser (Tree String)
+parseOp14 :: MinRubyParser (Tree Value)
 parseOp14 = stringToken "-" *> (mkBinOpNode minus_one "*" <$> parseOp14)
         <|> parseOp15
   where
-    minus_one = mkLitNode "-1"
+    minus_one = mkLitNode (negate 1 :: Int)
 
-parseOp15 :: MinRubyParser (Tree String)
+parseOp15 :: MinRubyParser (Tree Value)
 parseOp15 = parseOp16 >>= parseOp15'
   where
     parseOp15' left = mkBinOpNode left
@@ -67,16 +107,16 @@ parseOp15 = parseOp16 >>= parseOp15'
                         <*> parseOp15
                   <|> return left
 
-parseOp16 :: MinRubyParser (Tree String)
+parseOp16 :: MinRubyParser (Tree Value)
 parseOp16 = stringToken "+" *> parseOp14
         <|> parseFactor
 
-parseFactor :: MinRubyParser (Tree String)
+parseFactor :: MinRubyParser (Tree Value)
 parseFactor = between (stringToken "(") (stringToken ")") parseExp
           <|> mkLitNode <$> token digit
 
-digit :: MinRubyParser String
-digit = some digitChar
+digit :: MinRubyParser Int
+digit = read <$> some digitChar
 
 token :: MinRubyParser a -> MinRubyParser a
 token p = space *> p <* space
@@ -86,11 +126,11 @@ stringToken = token . string
 
 -- Tree generator
 
-leaf :: a -> Tree a
-leaf = flip Node []
+leaf :: ToValue a => a -> Tree Value
+leaf = flip Node [] . toValue
 
-mkLitNode :: String -> Tree String
-mkLitNode = Node "lit" . (: []) . leaf
+mkLitNode :: ToValue a => a -> Tree Value
+mkLitNode = Node (toValue "lit") . (: []) . leaf
 
-mkBinOpNode :: Tree String -> String -> Tree String -> Tree String
-mkBinOpNode e1 op e2 = Node op [e1, e2]
+mkBinOpNode :: Tree Value -> String -> Tree Value -> Tree Value
+mkBinOpNode e1 op e2 = Node (toValue op) [e1, e2]
