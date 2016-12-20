@@ -23,13 +23,15 @@ minrubyParser :: MinRubyParser (Tree String)
 minrubyParser = parseExp
 
 {-
-  op12  := op13 op12'
-  op12' := ("+" | "-") op12 | epsilon
-  op13  := op15 op13'
-  op13' := ("*" | "/" | "%") op13 | epsilon
-  op15  := factor op15'
-  op15' := "**" op15 | epsilon
-  factor  := "(" exp ")" | number
+  op12   := op13 op12'
+  op12'  := ("+" | "-") op12 | epsilon
+  op13   := op15 op13'
+  op13'  := ("*" | "/" | "%") op13 | epsilon
+  op14   := "-" op14 | op15
+  op15   := op16 op15'
+  op15'  := "**" op15 | epsilon
+  op16   := "+" op16 | factor
+  factor := "(" exp ")" | number
 -}
 
 parseExp :: MinRubyParser (Tree String)
@@ -44,20 +46,30 @@ parseOp12 = parseOp13 >>= parseOp12'
                   <|> return left
 
 parseOp13 :: MinRubyParser (Tree String)
-parseOp13 = parseOp15 >>= parseOp13'
+parseOp13 = parseOp14 >>= parseOp13'
   where
     parseOp13' left = mkBinOpNode left
                         <$> (stringToken "*" <|> stringToken "/" <|> stringToken "%")
                         <*> parseOp13
                   <|> return left
 
+parseOp14 :: MinRubyParser (Tree String)
+parseOp14 = stringToken "-" *> (mkBinOpNode minus_one "*" <$> parseOp14)
+        <|> parseOp15
+  where
+    minus_one = mkLitNode "-1"
+
 parseOp15 :: MinRubyParser (Tree String)
-parseOp15 = parseFactor >>= parseOp15'
+parseOp15 = parseOp16 >>= parseOp15'
   where
     parseOp15' left = mkBinOpNode left
                         <$> stringToken "**"
                         <*> parseOp15
                   <|> return left
+
+parseOp16 :: MinRubyParser (Tree String)
+parseOp16 = stringToken "+" *> parseOp14
+        <|> parseFactor
 
 parseFactor :: MinRubyParser (Tree String)
 parseFactor = between (stringToken "(") (stringToken ")") parseExp
