@@ -10,8 +10,10 @@ module MinRuby
 import Control.Applicative (empty)
 import Data.Either (either)
 import Data.Tree (Tree(..))
-import Text.Megaparsec ( Parsec, Dec, parse, parseErrorPretty, some
-                       , string, space, (<|>), between)
+import System.Environment (getArgs)
+import Text.Megaparsec ( Parsec, Dec, parse, parseErrorPretty, many, some
+                       , string, space, (<|>), between, sepBy, letterChar
+                       , char, alphaNumChar)
 import Text.Megaparsec.Char (digitChar)
 
 type MinRubyParser = Parsec Dec String
@@ -19,6 +21,7 @@ type MinRubyParser = Parsec Dec String
 data Value = SVal { getString :: String }
            | IVal { getInt :: Int }
            | BVal { getBool :: Bool }
+           | UVal ()
            deriving (Eq)
 
 instance Show Value where
@@ -26,6 +29,7 @@ instance Show Value where
   show (IVal v) = show v
   show (BVal True) = "true"
   show (BVal False) = "false"
+  show (UVal ()) = "()"
 
 class Ord a => ToValue a where
   toValue :: a -> Value
@@ -51,12 +55,20 @@ minrubyParse = either (error . parseErrorPretty) id
              . parse minrubyParser "MinRuby Parser"
 
 minrubyLoad :: IO String
-minrubyLoad = undefined
+minrubyLoad = do
+  args <- getArgs
+  if null args then
+    getContents
+  else
+    readFile (args !! 0)
 
 minrubyParser :: MinRubyParser (Tree Value)
-minrubyParser = parseExp
+minrubyParser = parseStmt
 
 {-
+  stmt   := exp stmt'
+  stmt'  := eol stmt <|> epsilon
+  exp    := op07
   op07   := op08 op07'
   op07'  := ("!=" | "==") op07 | epsilon
   op08   := op12 op08'
@@ -69,8 +81,13 @@ minrubyParser = parseExp
   op15   := op16 op15'
   op15'  := "**" op15 | epsilon
   op16   := ("+" \ "!") op16 | factor
+  fcall  := ident " " args | ident "(" args ")" | fanctor
+  args   := exp ("," args | epsilon)
   factor := "(" exp ")" | number | boolean
 -}
+
+parseStmt :: MinRubyParser (Tree Value)
+parseStmt = Node (SVal "stmt") <$> many parseExp
 
 parseExp :: MinRubyParser (Tree Value)
 parseExp = parseOp07
@@ -125,7 +142,16 @@ parseOp15 = parseOp16 >>= parseOp15'
 parseOp16 :: MinRubyParser (Tree Value)
 parseOp16 = stringToken "+" *> parseOp16
         <|> stringToken "!" *> (mkBinOpNode (mkLitNode False) "==" <$> parseOp16)
-        <|> parseFactor
+        <|> parseFcall
+
+parseFcall :: MinRubyParser (Tree Value)
+parseFcall = mkFcallNode <$> ident <*>
+                (char ' ' *> parseArgs
+             <|> between (stringToken "(") (stringToken ")") parseArgs)
+         <|> parseFactor
+
+parseArgs :: MinRubyParser [Tree Value]
+parseArgs = parseExp `sepBy` char ','
 
 parseFactor :: MinRubyParser (Tree Value)
 parseFactor = between (stringToken "(") (stringToken ")") parseExp
@@ -138,6 +164,9 @@ digit = read <$> some digitChar
 boolean :: MinRubyParser Bool
 boolean = stringToken "true" *> return True
       <|> stringToken "false" *> return False
+
+ident :: MinRubyParser String
+ident = (:) <$> letterChar <*> many (alphaNumChar <|> char '_')
 
 token :: MinRubyParser a -> MinRubyParser a
 token p = space *> p <* space
@@ -155,3 +184,6 @@ mkLitNode = Node (toValue "lit") . (: []) . leaf
 
 mkBinOpNode :: Tree Value -> String -> Tree Value -> Tree Value
 mkBinOpNode e1 op e2 = Node (toValue op) [e1, e2]
+
+mkFcallNode :: String -> [Tree Value] -> Tree Value
+mkFcallNode fname = Node (SVal "func_call") . (leaf fname :)
