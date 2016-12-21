@@ -121,15 +121,15 @@ parseOp13 :: MinRubyParser (Tree Value)
 parseOp13 = parseOp14 >>= parseOp13'
   where
     parseOp13' left = mkBinOpNode left
-                        <$> (stringToken "*" <|> stringToken "/" <|> stringToken "%")
+                        <$> foldl (<|>) empty (fmap stringToken aops)
                         <*> parseOp13
                   <|> return left
-
+    aops = ["*","/","%"]
 parseOp14 :: MinRubyParser (Tree Value)
-parseOp14 = stringToken "-" *> (mkBinOpNode minus_one "*" <$> parseOp14)
+parseOp14 = stringToken "-" *> (mkBinOpNode minusOne "*" <$> parseOp14)
         <|> parseOp15
   where
-    minus_one = mkLitNode (negate 1 :: Int)
+    minusOne = mkLitNode (negate 1 :: Int)
 
 parseOp15 :: MinRubyParser (Tree Value)
 parseOp15 = parseOp16 >>= parseOp15'
@@ -141,8 +141,10 @@ parseOp15 = parseOp16 >>= parseOp15'
 
 parseOp16 :: MinRubyParser (Tree Value)
 parseOp16 = stringToken "+" *> parseOp16
-        <|> stringToken "!" *> (mkBinOpNode (mkLitNode False) "==" <$> parseOp16)
+        <|> stringToken "!" *> (mkBinOpNode false "==" <$> parseOp16)
         <|> parseFcall
+  where
+    false = mkLitNode False
 
 parseFcall :: MinRubyParser (Tree Value)
 parseFcall = mkFcallNode <$> ident <*>
