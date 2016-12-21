@@ -27,7 +27,7 @@ instance Show Value where
   show (BVal True) = "true"
   show (BVal False) = "false"
 
-class ToValue a where
+class Ord a => ToValue a where
   toValue :: a -> Value
   fromValue :: Value -> Maybe a
 
@@ -57,6 +57,10 @@ minrubyParser :: MinRubyParser (Tree Value)
 minrubyParser = parseExp
 
 {-
+  op07   := op08 op07'
+  op07'  := ("!=" | "==") op07 | epsilon
+  op08   := op12 op08'
+  op08'  := (">" | ">=" | "<" | "<=") op08 | epsilon
   op12   := op13 op12'
   op12'  := ("+" | "-") op12 | epsilon
   op13   := op15 op13'
@@ -64,12 +68,29 @@ minrubyParser = parseExp
   op14   := "-" op14 | op15
   op15   := op16 op15'
   op15'  := "**" op15 | epsilon
-  op16   := "+" op16 | factor
-  factor := "(" exp ")" | number
+  op16   := ("+" \ "!") op16 | factor
+  factor := "(" exp ")" | number | boolean
 -}
 
 parseExp :: MinRubyParser (Tree Value)
-parseExp = parseOp12
+parseExp = parseOp07
+
+parseOp07 :: MinRubyParser (Tree Value)
+parseOp07 = parseOp08 >>= parseOp07'
+  where
+    parseOp07' left = mkBinOpNode left
+                        <$> (stringToken "!=" <|> stringToken "==")
+                        <*> parseOp07
+                  <|> return left
+
+parseOp08 :: MinRubyParser (Tree Value)
+parseOp08 = parseOp12 >>= parseOp08'
+  where
+    parseOp08' left = mkBinOpNode left
+                        <$> foldl (<|>) empty (fmap stringToken bops)
+                        <*> parseOp07
+                  <|> return left
+    bops = [">=",">","<=","<"]
 
 parseOp12 :: MinRubyParser (Tree Value)
 parseOp12 = parseOp13 >>= parseOp12'
@@ -102,15 +123,21 @@ parseOp15 = parseOp16 >>= parseOp15'
                   <|> return left
 
 parseOp16 :: MinRubyParser (Tree Value)
-parseOp16 = stringToken "+" *> parseOp14
+parseOp16 = stringToken "+" *> parseOp16
+        <|> stringToken "!" *> (mkBinOpNode (mkLitNode False) "==" <$> parseOp16)
         <|> parseFactor
 
 parseFactor :: MinRubyParser (Tree Value)
 parseFactor = between (stringToken "(") (stringToken ")") parseExp
           <|> mkLitNode <$> token digit
+          <|> mkLitNode <$> token boolean
 
 digit :: MinRubyParser Int
 digit = read <$> some digitChar
+
+boolean :: MinRubyParser Bool
+boolean = stringToken "true" *> return True
+      <|> stringToken "false" *> return False
 
 token :: MinRubyParser a -> MinRubyParser a
 token p = space *> p <* space
