@@ -5,8 +5,14 @@ module Main
     ) where
 
 import MinRuby
+import Control.Monad.State (StateT, evalStateT, modify, gets)
+import Control.Monad.Trans (lift)
 import Data.Tree (Tree(..), drawTree)
+import Data.HashMap (Map, empty, insert, findWithDefault)
 import System.IO (hFlush, stdout)
+
+type Env = Map String Value
+type Eval a = StateT Env IO a
 
 main :: IO ()
 main = do
@@ -14,21 +20,23 @@ main = do
   let tree = minrubyParse input
   -- print tree
   -- hFlush stdout
-  evaluate tree
+  evalStateT (evaluate tree) empty
   return ()
 
-evaluate :: Tree Value -> IO Value
+evaluate :: Tree Value -> Eval Value
 evaluate (Node v ls) = do
   exps <- mapM evaluate ls
   if null ls then
     return v
   else
     case getString v of
-      "func_call" -> print (exps !! 1) *> return (UVal ())
-      str -> return $ pevaluate str exps
+      "func_call"  -> lift (print $ exps !! 1) *> return (UVal ())
+      "var_assign" -> assign (exps !! 0) (exps !! 1)
+      "var_ref"    -> refer (exps !! 0)
+      str -> return $ pevaluate exps str
 
-pevaluate :: String -> [Value] -> Value
-pevaluate v exps =
+pevaluate :: [Value] ->  String -> Value
+pevaluate exps v =
   case v of
     "lit" -> exps !! 0
     "+"   -> IVal $ getInt (exps !! 0) + getInt (exps !! 1)
@@ -51,3 +59,11 @@ boolOp f (SVal v1) (SVal v2) = f v1 v2
 boolOp f (IVal v1) (IVal v2) = f v1 v2
 boolOp f (BVal v1) (BVal v2) = f v1 v2
 boolOp _ _ _ = False
+
+assign :: Value -> Value -> Eval Value
+assign k v = modify (insert (getString k) v) *> return v
+
+refer :: Value -> Eval Value
+refer k = gets $ findWithDefault emassage (getString k)
+  where
+    emassage = error $ "undefined : " `mappend` getString k

@@ -11,7 +11,7 @@ import Control.Applicative (empty)
 import Data.Either (either)
 import Data.Tree (Tree(..))
 import System.Environment (getArgs)
-import Text.Megaparsec ( Parsec, Dec, parse, parseErrorPretty, many, some
+import Text.Megaparsec ( Parsec, Dec, parse, parseErrorPretty, many, some, try
                        , string, space, (<|>), between, sepBy, letterChar
                        , char, alphaNumChar)
 import Text.Megaparsec.Char (digitChar)
@@ -66,9 +66,9 @@ minrubyParser :: MinRubyParser (Tree Value)
 minrubyParser = parseStmt
 
 {-
-  stmt   := exp stmt'
-  stmt'  := eol stmt <|> epsilon
-  exp    := op07
+  stmt   := exp (newline stmt | epsilon)
+  exp    := op02
+  op02   := ident "=" exp <|> op07
   op07   := op08 op07'
   op07'  := ("!=" | "==") op07 | epsilon
   op08   := op12 op08'
@@ -81,16 +81,19 @@ minrubyParser = parseStmt
   op15   := op16 op15'
   op15'  := "**" op15 | epsilon
   op16   := ("+" \ "!") op16 | factor
-  fcall  := ident " " args | ident "(" args ")" | fanctor
+  factor := "(" exp ")" | number | boolean | ident | ident "(" args ")"
   args   := exp ("," args | epsilon)
-  factor := "(" exp ")" | number | boolean
 -}
 
 parseStmt :: MinRubyParser (Tree Value)
 parseStmt = Node (SVal "stmt") <$> many parseExp
 
 parseExp :: MinRubyParser (Tree Value)
-parseExp = parseOp07
+parseExp = parseOp02
+
+parseOp02 :: MinRubyParser (Tree Value)
+parseOp02 = try (mkVassignNode <$> token ident <* stringToken "=" <*> parseExp)
+        <|> parseOp07
 
 parseOp07 :: MinRubyParser (Tree Value)
 parseOp07 = parseOp08 >>= parseOp07'
@@ -125,6 +128,7 @@ parseOp13 = parseOp14 >>= parseOp13'
                         <*> parseOp13
                   <|> return left
     aops = ["*","/","%"]
+
 parseOp14 :: MinRubyParser (Tree Value)
 parseOp14 = stringToken "-" *> (mkBinOpNode minusOne "*" <$> parseOp14)
         <|> parseOp15
@@ -142,23 +146,23 @@ parseOp15 = parseOp16 >>= parseOp15'
 parseOp16 :: MinRubyParser (Tree Value)
 parseOp16 = stringToken "+" *> parseOp16
         <|> stringToken "!" *> (mkBinOpNode false "==" <$> parseOp16)
-        <|> parseFcall
+        <|> parseFactor
   where
     false = mkLitNode False
-
-parseFcall :: MinRubyParser (Tree Value)
-parseFcall = mkFcallNode <$> ident <*>
-                (char ' ' *> parseArgs
-             <|> between (stringToken "(") (stringToken ")") parseArgs)
-         <|> parseFactor
-
-parseArgs :: MinRubyParser [Tree Value]
-parseArgs = parseExp `sepBy` char ','
 
 parseFactor :: MinRubyParser (Tree Value)
 parseFactor = between (stringToken "(") (stringToken ")") parseExp
           <|> mkLitNode <$> token digit
           <|> mkLitNode <$> token boolean
+          <|> (token ident >>= parseFcall)
+
+parseFcall :: String -> MinRubyParser (Tree Value)
+parseFcall name = mkFcallNode name <$>
+                    between (stringToken "(") (stringToken ")") parseArgs
+              <|> return (mkVrefNode name)
+
+parseArgs :: MinRubyParser [Tree Value]
+parseArgs = parseExp `sepBy` char ','
 
 digit :: MinRubyParser Int
 digit = read <$> some digitChar
@@ -182,10 +186,16 @@ leaf :: ToValue a => a -> Tree Value
 leaf = flip Node [] . toValue
 
 mkLitNode :: ToValue a => a -> Tree Value
-mkLitNode = Node (toValue "lit") . (: []) . leaf
+mkLitNode = Node (SVal "lit") . (: []) . leaf
+
+mkVrefNode :: String -> Tree Value
+mkVrefNode = Node (SVal "var_ref") . (: []) . leaf
 
 mkBinOpNode :: Tree Value -> String -> Tree Value -> Tree Value
-mkBinOpNode e1 op e2 = Node (toValue op) [e1, e2]
+mkBinOpNode e1 op e2 = Node (SVal op) [e1, e2]
 
 mkFcallNode :: String -> [Tree Value] -> Tree Value
 mkFcallNode fname = Node (SVal "func_call") . (leaf fname :)
+
+mkVassignNode :: String -> Tree Value -> Tree Value
+mkVassignNode vname = Node (SVal "var_assign") . (leaf vname :) . (: [])
