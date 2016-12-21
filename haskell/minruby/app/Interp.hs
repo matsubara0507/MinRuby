@@ -5,7 +5,8 @@ module Main
     ) where
 
 import MinRuby
-import Control.Monad.State (StateT, evalStateT, modify, gets)
+import Control.Monad (join, foldM)
+import Control.Monad.State.Strict (StateT, evalStateT, modify, gets)
 import Control.Monad.Trans (lift)
 import Data.Tree (Tree(..), drawTree)
 import Data.HashMap (Map, empty, insert, findWithDefault)
@@ -25,40 +26,40 @@ main = do
 
 evaluate :: Tree Value -> Eval Value
 evaluate (Node v ls) = do
-  exps <- mapM evaluate ls
   if null ls then
     return v
   else
     case getString v of
-      "func_call"  -> lift (print $ exps !! 1) *> return (UVal ())
-      "var_assign" -> assign (exps !! 0) (exps !! 1)
-      "var_ref"    -> refer (exps !! 0)
-      str -> return $ pevaluate exps str
+      "func_call" -> UVal <$> (lift . print =<< evaluate (ls !! 1))
+      "var_assign" -> join $ assign <$> evaluate (ls !! 0) <*> evaluate (ls !! 1)
+      "var_ref" -> refer =<< evaluate (ls !! 0)
+      "lit" -> evaluate (ls !! 0)
+      "+" -> intOp (+) <$> evaluate (ls !! 0) <*> evaluate (ls !! 1)
+      "-" -> intOp (-) <$> evaluate (ls !! 0) <*> evaluate (ls !! 1)
+      "*" -> intOp (*) <$> evaluate (ls !! 0) <*> evaluate (ls !! 1)
+      "/" -> intOp div <$> evaluate (ls !! 0) <*> evaluate (ls !! 1)
+      "%" -> intOp mod <$> evaluate (ls !! 0) <*> evaluate (ls !! 1)
+      "**" -> intOp (^) <$> evaluate (ls !! 0) <*> evaluate (ls !! 1)
+      "<" -> boolOp (<) <$> evaluate (ls !! 0) <*> evaluate (ls !! 1)
+      "<=" -> boolOp (<=) <$> evaluate (ls !! 0) <*> evaluate (ls !! 1)
+      "==" -> boolOp (==) <$> evaluate (ls !! 0) <*> evaluate (ls !! 1)
+      "!=" -> boolOp (/=) <$> evaluate (ls !! 0) <*> evaluate (ls !! 1)
+      ">" -> boolOp (>) <$> evaluate (ls !! 0) <*> evaluate (ls !! 1)
+      ">=" -> boolOp (>=) <$> evaluate (ls !! 0) <*> evaluate (ls !! 1)
+      "stmt" -> foldM (const evaluate) (UVal ()) ls
+      "if"   -> evaluate (ls !! 0) >>=
+                  \b -> evaluate $ if getBool b then ls !! 1 else ls !! 2
+      _     -> error ("undefined : " `mappend` show v)
 
-pevaluate :: [Value] ->  String -> Value
-pevaluate exps v =
-  case v of
-    "lit" -> exps !! 0
-    "+"   -> IVal $ getInt (exps !! 0) + getInt (exps !! 1)
-    "-"   -> IVal $ getInt (exps !! 0) - getInt (exps !! 1)
-    "*"   -> IVal $ getInt (exps !! 0) * getInt (exps !! 1)
-    "/"   -> IVal $ getInt (exps !! 0) `div` getInt (exps !! 1)
-    "%"   -> IVal $ getInt (exps !! 0) `mod` getInt (exps !! 1)
-    "**"  -> IVal $ getInt (exps !! 0) ^ getInt (exps !! 1)
-    "<"   -> BVal $ boolOp (<) (exps !! 0) (exps !! 1)
-    "<="  -> BVal $ boolOp (<=) (exps !! 0) (exps !! 1)
-    "=="  -> BVal $ boolOp (==) (exps !! 0) (exps !! 1)
-    "!="  -> BVal $ boolOp (/=) (exps !! 0) (exps !! 1)
-    ">"   -> BVal $ boolOp (>) (exps !! 0) (exps !! 1)
-    ">="  -> BVal $ boolOp (>=) (exps !! 0) (exps !! 1)
-    "stmt" -> foldl seq (UVal ()) exps
-    _     -> error ("undefined : " `mappend` show v)
+intOp :: (Int -> Int -> Int) -> Value -> Value -> Value
+intOp f (IVal v1) (IVal v2) = IVal $ f v1 v2
+intOp f v1 v2 = error $ "unmatch type " `mappend` concatMap show [v1,v2]
 
-boolOp :: (forall a . Ord a => a -> a -> Bool) -> Value -> Value -> Bool
-boolOp f (SVal v1) (SVal v2) = f v1 v2
-boolOp f (IVal v1) (IVal v2) = f v1 v2
-boolOp f (BVal v1) (BVal v2) = f v1 v2
-boolOp _ _ _ = False
+boolOp :: (forall a . Ord a => a -> a -> Bool) -> Value -> Value -> Value
+boolOp f (SVal v1) (SVal v2) = BVal $ f v1 v2
+boolOp f (IVal v1) (IVal v2) = BVal $ f v1 v2
+boolOp f (BVal v1) (BVal v2) = BVal $ f v1 v2
+boolOp _ _ _ = BVal False
 
 assign :: Value -> Value -> Eval Value
 assign k v = modify (insert (getString k) v) *> return v

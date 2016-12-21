@@ -13,7 +13,7 @@ import Data.Tree (Tree(..))
 import System.Environment (getArgs)
 import Text.Megaparsec ( Parsec, Dec, parse, parseErrorPretty, many, some, try
                        , string, space, (<|>), between, sepBy, letterChar
-                       , char, alphaNumChar)
+                       , char, alphaNumChar, newline)
 import Text.Megaparsec.Char (digitChar)
 
 type MinRubyParser = Parsec Dec String
@@ -67,7 +67,9 @@ minrubyParser = parseStmt
 
 {-
   stmt   := exp (newline stmt | epsilon)
-  exp    := op02
+  exp    := ifels
+  ifels  := "if" term stmt "else" stmt "end" | term
+  term   := op02
   op02   := ident "=" exp <|> op07
   op07   := op08 op07'
   op07'  := ("!=" | "==") op07 | epsilon
@@ -89,7 +91,18 @@ parseStmt :: MinRubyParser (Tree Value)
 parseStmt = Node (SVal "stmt") <$> many parseExp
 
 parseExp :: MinRubyParser (Tree Value)
-parseExp = parseOp02
+parseExp = parseIfels
+
+parseIfels :: MinRubyParser (Tree Value)
+parseIfels = try (between (stringToken "if") (stringToken "end") parseIfels')
+         <|> parseTerm
+  where
+    parseIfels' = mkIfNode <$> parseTerm
+                           <*> parseTerm
+                           <*> (stringToken "else" *> parseTerm)
+
+parseTerm :: MinRubyParser (Tree Value)
+parseTerm = parseOp02
 
 parseOp02 :: MinRubyParser (Tree Value)
 parseOp02 = try (mkVassignNode <$> token ident <* stringToken "=" <*> parseExp)
@@ -199,3 +212,6 @@ mkFcallNode fname = Node (SVal "func_call") . (leaf fname :)
 
 mkVassignNode :: String -> Tree Value -> Tree Value
 mkVassignNode vname = Node (SVal "var_assign") . (leaf vname :) . (: [])
+
+mkIfNode :: Tree Value -> Tree Value -> Tree Value -> Tree Value
+mkIfNode p v1 v2 = Node (SVal "if") [p, v1, v2]
