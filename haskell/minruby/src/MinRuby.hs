@@ -3,7 +3,6 @@
 module MinRuby
     ( Value(..)
     , ToValue(..)
-    , FromValue(..)
     , minrubyParse
     , minrubyLoad
     ) where
@@ -17,7 +16,10 @@ import Text.Megaparsec.Char (digitChar)
 
 type MinRubyParser = Parsec Dec String
 
-data Value = SVal String | IVal Int | BVal Bool deriving (Eq)
+data Value = SVal { getString :: String }
+           | IVal { getInt :: Int }
+           | BVal { getBool :: Bool }
+           deriving (Eq)
 
 instance Show Value where
   show (SVal v) = show v
@@ -27,28 +29,20 @@ instance Show Value where
 
 class ToValue a where
   toValue :: a -> Value
+  fromValue :: Value -> Maybe a
 
 instance ToValue String where
   toValue = SVal
-
-instance ToValue Int where
-  toValue = IVal
-
-instance ToValue Bool where
-  toValue = BVal
-
-class FromValue a where
-  fromValue :: Value -> Maybe a
-
-instance FromValue String where
   fromValue (SVal v) = Just v
   fromValue _        = Nothing
 
-instance FromValue Int where
+instance ToValue Int where
+  toValue = IVal
   fromValue (IVal v) = Just v
   fromValue _        = Nothing
 
-instance FromValue Bool where
+instance ToValue Bool where
+  toValue = BVal
   fromValue (BVal v) = Just v
   fromValue _        = Nothing
 
